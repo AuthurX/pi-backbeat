@@ -1,0 +1,27 @@
+{
+  "name": "pi-backbeat",
+  "version": "0.1.0",
+  "description": "Backbeat — the rhythm section for your day. Local-first AI scheduling for Apple Calendar, powered by Pi.",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "files": [
+    "bin",
+    "extensions",
+    "skills",
+    "systemd",
+    "!bin/__pycache__"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AuthurX/pi-backbeat.git"
+  },
+  "pi": {
+    "extensions": ["./extensions/index.ts"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

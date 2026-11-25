@@ -1,0 +1,13 @@
+[Unit]
+Description=Backbeat evening review (headless pi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=__HOME__
+Environment=XDG_RUNTIME_DIR=/run/user/__UID__
+Environment=WAYLAND_DISPLAY=__WAYLAND__
+Environment=DISPLAY=__DISPLAY__
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__UID__/bus
+ExecStart=__BACKBEAT_ROOT__/bin/review.sh
