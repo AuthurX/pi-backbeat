@@ -4,6 +4,8 @@
 
 It auto-blocks your day at 08:00, reshuffles on conflict via natural chat, and rolls unfinished tasks into tomorrow at 21:30.
 
+Built for **Apple Calendar (iCloud) only** — events, alarms, and sync are all native via CalDAV. No Google Calendar / Outlook support.
+
 ## How it works
 
 ```
