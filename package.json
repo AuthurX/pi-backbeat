@@ -1,6 +1,6 @@
 {
   "name": "pi-backbeat",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Backbeat — the rhythm section for your day. Local-first AI scheduling for Apple Calendar, powered by Pi.",
   "type": "module",
   "keywords": [

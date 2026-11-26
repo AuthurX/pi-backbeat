@@ -1,4 +1,4 @@
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -103,6 +103,54 @@ function todayStr(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+const TZ = process.env.BACKBEAT_TZ ?? "Asia/Shanghai";
+const NEAR_DAYS = 14; // dates within ±14d of today pass without a user mention
+
+function tzDateStr(tz = TZ): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  } catch {
+    return todayStr();
+  }
+}
+
+function dayDiff(dateStr: string, todayStr: string): number {
+  return Math.round((Date.parse(dateStr + "T00:00:00Z") - Date.parse(todayStr + "T00:00:00Z")) / 86400000);
+}
+
+function dateEcho(date: string | undefined, json: string): string {
+  const d = date ?? tzDateStr();
+  const today = tzDateStr();
+  return `date: ${d}${d !== today ? ` (today: ${today})` : ""}\n${json}`;
+}
+
+function recentUserText(ctx: ExtensionContext, maxUser = 12): string {
+  try {
+    const entries = ctx.sessionManager.getBranch() as any[];
+    const texts: string[] = [];
+    for (const e of entries) {
+      if (e?.type !== "message" || e.message?.role !== "user") continue;
+      const c = e.message.content;
+      if (typeof c === "string") texts.push(c);
+      else if (Array.isArray(c)) texts.push(c.map((b: any) => (b?.type === "text" ? b.text : "")).join(" "));
+    }
+    return texts.slice(-maxUser).join("\n");
+  } catch {
+    return "";
+  }
+}
+
+/** Returns a block reason when date is implausible (far from today, never mentioned by user). */
+function dateGuard(date: string | undefined, userText: string): string | null {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const today = tzDateStr();
+  if (date === today) return null;
+  const diff = Math.abs(dayDiff(date, today));
+  if (diff <= NEAR_DAYS) return null;
+  if (userText.includes(date)) return null;
+  return `日期防护：${date} 与今天 ${today} 相差 ${diff} 天，且用户近期消息未提及该日期。查今天请省略 date 参数重试；如用户确指该日期（可能用非 ISO 写法），请先向用户确认。`;
+}
+
 function dueRank(meta: string, today: string): number {
   if (meta.includes("今天")) return 0;
   if (meta.includes("明天")) return 1;
@@ -186,6 +234,27 @@ async function runPlan(ctx: ExtensionCommandContext, replan: boolean): Promise<v
 // ---------- extension ----------
 
 export default function (pi: ExtensionAPI) {
+  pi.on("before_agent_start", (event) => {
+    const now = new Date();
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: TZ }).format(now);
+    event.systemPromptOptions.sections.current_date = `${tzDateStr()} (${weekday}, ${TZ})`;
+  });
+
+  // Deterministic guard: block calendar dates that are far from today and never
+  // mentioned in recent user messages (LLM date-hallucination defense).
+  pi.on("tool_call", (event, ctx) => {
+    if (event.toolName !== "calendar") return;
+    const input = event.input as Record<string, unknown>;
+    const userText = recentUserText(ctx);
+    for (const key of ["date", "start", "end"] as const) {
+      const v = input[key];
+      if (typeof v !== "string") continue;
+      const m = v.match(/^\d{4}-\d{2}-\d{2}/);
+      const reason = m ? dateGuard(m[0], userText) : null;
+      if (reason) return { block: true, reason };
+    }
+  });
+
   pi.registerTool({
     name: "tasks",
     label: "Tasks",
@@ -340,9 +409,9 @@ export default function (pi: ExtensionAPI) {
       try {
         switch (params.action) {
           case "day":
-            return ok(await ical(["day", ...(params.date ? [params.date] : [])]));
+            return ok(dateEcho(params.date, await ical(["day", ...(params.date ? [params.date] : [])])));
           case "free":
-            return ok(await ical(["free", ...(params.date ? [params.date] : [])]));
+            return ok(dateEcho(params.date, await ical(["free", ...(params.date ? [params.date] : [])])));
           case "add": {
             if (!params.title || !params.start) return err("title and start required");
             const args = ["add", "--title", params.title, "--start", params.start];
@@ -373,11 +442,14 @@ export default function (pi: ExtensionAPI) {
           }
           case "clear_ai":
             return ok(
-              await ical([
-                "clear-ai",
-                ...(params.date ? [params.date] : []),
-                ...(params.after ? ["--after", params.after] : []),
-              ])
+              dateEcho(
+                params.date,
+                await ical([
+                  "clear-ai",
+                  ...(params.date ? [params.date] : []),
+                  ...(params.after ? ["--after", params.after] : []),
+                ])
+              )
             );
         }
       } catch (e: any) {
